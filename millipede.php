@@ -1,6 +1,11 @@
 <?php
-//监听redis队列的变化并分发任务
-
+/**
+* @file millipede.php
+* @brief 监听redis队列的变化并分发任务
+* @author cxj009
+* @version 1.0
+* @date 2015-12-12
+*/
 set_time_limit(0);
 
 //socket流的超时时间

@@ -1,4 +1,11 @@
 <?php
+/**
+* @file worker.php
+* @brief worker的父类
+* @author cxj009
+* @version 1.0
+* @date 2015-12-12
+*/
 class Worker{
 
 	protected static $db = false;
