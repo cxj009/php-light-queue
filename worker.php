@@ -20,7 +20,8 @@ class Worker{
 		if($GLOBALS['db_config']){
 			$db_config = $GLOBALS['db_config'];	
 			self::$db = new mysqli($db_config['host'], $db_config['user'], $db_config['pswd'], $db_config['db']);
-			self::$db->query('set names utf8;');
+			self::$db->query('set names '.$db_config['charset'].';');
+			$this->logger(__CLASS__, __METHOD__, 'db connect ..');
 		}
 		if($GLOBALS['redis']){
 			self::$redis = $GLOBALS['redis'];
