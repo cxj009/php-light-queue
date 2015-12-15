@@ -67,7 +67,7 @@ while(true){
 
 		if(!is_object($queue_data)){
 			//非法数据
-			queue_logger($log_file, 'illegal queue data:'.$res);
+			queue_logger($log_file, 'illegal queue data:'.$rs);
 			continue;
 		}
 
