@@ -9,8 +9,13 @@
 *	...
 * );
 */
-return array(
+$worker_register = array(
 	'test' => array(
 		'test' => '测试',
 	),
+);
+
+$worker_cli_register = array(
+	'test' => '测试',
+	'picspider' => '图片抓取',
 );
