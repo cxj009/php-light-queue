@@ -17,17 +17,19 @@ register_shutdown_function('shut_down');
 
 queue_logger('./logs/'.date("Ymd").'.log', 'millipede queue start...');
 
-$mode = isset($argv[1]) ? $argv[1] : '';
+$queue_id = isset($argv[1]) ? (int)$argv[1] : 0;
 
 //定义根目录
 define("ROOT", dirname(__FILE__)."/");  
 
 
 //主队列
-define('QUEUE_KEY', 'millipede:queue');
+define('QUEUE_KEY', 'millipede:queue:'.$queue_id);
 
 //安全队列：异常中断时候保存未完成的队列信息，重启队列后写回到主队列
-define('QUEUE_KEY_SECURE', 'millipede:queue:secure');
+define('QUEUE_KEY_SECURE', 'millipede:queue:secure:'.$queue_id);
+
+const MAX_CLI_WORKER_NUM = 5;
 
 //读取worker的注册信息
 $worker_register = require './inc/register.php';
@@ -48,6 +50,9 @@ $GLOBALS['redis'] = $redis = getRedisConnect($_redis_config, true);
 
 $GLOBALS['worker_list'] = array();
 
+//记录队列ID
+//$redis->hset('millipede:queue:ids', 'queue:'.$queue_id, 1);
+
 $secure_data = $redis->lrange(QUEUE_KEY_SECURE, 0, -1);
 //把之前异常的队列信息再次放入到队列中
 if(is_array($secure_data)){
@@ -58,6 +63,12 @@ if(is_array($secure_data)){
 
 //阻塞队列
 while(true){
+	if(!get_cli_worker_count()){
+		queue_logger('./logs/'.date("Ymd").'.log', 'proc too many...');
+		sleep(1);
+		continue;
+	}	
+	
 	$rs = $redis->brpoplpush(QUEUE_KEY, QUEUE_KEY_SECURE, 0);
 	if($rs != '' ){
 		//日志文件
@@ -73,6 +84,8 @@ while(true){
 
 		queue_logger($log_file, 'job start:'.$rs);
 
+		//worker的类型
+		$type = isset($queue_data->type) ? $queue_data->type: 'normal';
 		//worker的类名
 		$worker = isset($queue_data->worker) ? $queue_data->worker : '';
 		//方法名称
@@ -80,6 +93,14 @@ while(true){
 		//数据
 		$data = isset($queue_data->data) ? $queue_data->data : array();
 		if($worker == '' || $method == ''){
+			continue;
+		}
+
+		//调用外部PHP脚本
+		if($type == 'cli'){
+			$cmd = 'nohup php ./worker/cli/'.$worker.'.php "'.json_encode($data).'"  > ./logs/out.file 2>&1 &';
+			exec($cmd);
+			$redis->lrem(QUEUE_KEY_SECURE, $rs, 1);
 			continue;
 		}
 
@@ -163,6 +184,19 @@ function error_handle($errno, $errstr, $errfile, $errline){
 	file_put_contents($error_log_file, $line."\n", FILE_APPEND);
 }
 
+//获取CLI模式woker进程数
+function get_cli_worker_count(){
+	$num = 0;
+	$cmd = 'ps -ef | grep -v "grep" | grep -r "worker/cli/.*.php" | wc -l';
+	$num = exec($cmd);
+	if($num >= MAX_CLI_WORKER_NUM){
+		return false;
+	}
+
+	return true;
+}
+
+//进程终止
 function shut_down(){
 	$error = error_get_last();
 	queue_logger('./logs/'.date("Ymd").'.log', 'millipede queue shutdown...'.json_encode($error));
