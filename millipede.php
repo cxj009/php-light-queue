@@ -22,26 +22,18 @@ $queue_id = isset($argv[1]) ? (int)$argv[1] : 0;
 //定义根目录
 define("ROOT", dirname(__FILE__)."/");  
 
-
 //主队列
 define('QUEUE_KEY', 'millipede:queue:'.$queue_id);
 
 //安全队列：异常中断时候保存未完成的队列信息，重启队列后写回到主队列
 define('QUEUE_KEY_SECURE', 'millipede:queue:secure:'.$queue_id);
 
-const MAX_CLI_WORKER_NUM = 5;
-
-//读取worker的注册信息
-$worker_register = require './inc/register.php';
-
+//worker的注册信息
+require './inc/register.php';
 require './inc/constants.php';
-
 require './inc/redis.php';
-
 require './inc/mysql.php';
-
 require './inc/memcached.php';
-
 //worker的父类
 require './worker.php';
 
@@ -63,12 +55,6 @@ if(is_array($secure_data)){
 
 //阻塞队列
 while(true){
-	if(!get_cli_worker_count()){
-		queue_logger('./logs/'.date("Ymd").'.log', 'proc too many...');
-		sleep(1);
-		continue;
-	}	
-	
 	$rs = $redis->brpoplpush(QUEUE_KEY, QUEUE_KEY_SECURE, 0);
 	if($rs != '' ){
 		//日志文件
@@ -92,59 +78,81 @@ while(true){
 		$method = isset($queue_data->method) ? $queue_data->method : '';
 		//数据
 		$data = isset($queue_data->data) ? $queue_data->data : array();
-		if($worker == '' || $method == ''){
+		if($worker == ''){
 			continue;
 		}
-
+		$is_error = 0;
 		//调用外部PHP脚本
 		if($type == 'cli'){
-			$cmd = 'nohup php ./worker/cli/'.$worker.'.php "'.json_encode($data).'"  > ./logs/out.file 2>&1 &';
-			exec($cmd);
-			$redis->lrem(QUEUE_KEY_SECURE, $rs, 1);
-			continue;
-		}
-
-		$is_error = 0;
-
-		//判断worker类是否注册
-		if(!array_key_exists($worker, $worker_register)) {
-			$is_error = 1;
-			queue_logger($log_file, 'worker:'.$worker.' has not registered');
-		} else {
-			//判断worker的方法是否已经注册
-			if(!array_key_exists($method, $worker_register[$worker])){
+			if(!worker_cli_execute($worker, $data, $worker_cli_register, $log_file)){
 				$is_error = 1;
-				queue_logger($log_file, 'method:'.$worker.'->'.$method.' has not registered');
 			} else {
-				$worker_class = load_class($worker);
-				if(!$worker_class){
-					$is_error = 1;
-					queue_logger($log_file, 'worker:'.$worker.' not exist');
-				} else {
-					if(!method_exists($worker_class, $method)){
-						$is_error = 1;
-						queue_logger($log_file, 'method:'.$worker.'->'.$method.' not exist');
-					}
-				}
+				$redis->lrem(QUEUE_KEY_SECURE, $rs, 1);
+				queue_logger($log_file, 'cli job running:'.$rs);
 			}
-		}
-
-		if($is_error == 1){
-			if($redis->lrem(QUEUE_KEY_SECURE, $rs, 1)) {
-				queue_logger($log_file, 'remove:'.$rs);
-			}
-			continue;
-		}
-
-
-		if($worker_class->$method($data)){
-			$redis->lrem(QUEUE_KEY_SECURE, $rs, 1);
-			queue_logger($log_file, 'job complete:'.$rs);
 		} else {
-			//没有完成任务，可能是方法异常，也可能是没有返回true
-			queue_logger($log_file, 'job not complete:'.$rs);
+			if($worker_class = worker_execute($worker, $method, $worker_register, $log_file)) {
+				if($worker_class->$method($data)){
+					$redis->lrem(QUEUE_KEY_SECURE, $rs, 1);
+					queue_logger($log_file, 'job complete:'.$rs);
+				} else {
+					//没有完成任务，可能是方法异常，也可能是没有返回true
+					$is_error = 1;
+				}
+			} else {
+				$is_error = 1;
+			}
+		}
+		if($is_error == 1) {
+			queue_logger($log_file, 'error:job not complete:'.$rs);
 		}
 	}
+}
+
+function worker_cli_execute($worker, $data, $worker_cli_register, $log_file){
+	if(!array_key_exists($worker, $worker_cli_register)) {
+		queue_logger($log_file, 'cli_worker:'.$worker.' has not registered');
+		return false;
+	}
+	$worker_file = './worker/cli/'.$worker.'.php';
+	if(!file_exists($worker_file)){
+		queue_logger($log_file, 'cli_worker:'.$worker.' file has not exist');
+		return false;
+	}
+
+	//判断当前cli cmd进程数，如果大于指定最高值，则等待
+	while(!get_cli_worker_count()){
+		queue_logger('./logs/'.date("Ymd").'.log', 'proc too many...');
+		sleep(1);
+	}	
+
+	$cmd = 'nohup php '.$worker_file.' \''.json_encode($data).'\'  > /dev/null 2>&1 &';
+	exec($cmd);
+	queue_logger($log_file, 'cli cmd:'.$cmd);
+	return true;
+}
+
+function worker_execute($worker, $method, $worker_register, $log_file){
+	//判断worker类是否注册
+	if(!array_key_exists($worker, $worker_register)) {
+		queue_logger($log_file, 'worker:'.$worker.' has not registered');
+		return false;
+	} 
+	//判断worker的方法是否已经注册
+	if(!array_key_exists($method, $worker_register[$worker])){
+		queue_logger($log_file, 'method:'.$worker.'->'.$method.' has not registered');
+		return false;
+	}
+	$worker_class = load_class($worker);
+	if(!$worker_class){
+		queue_logger($log_file, 'worker:'.$worker.' not exist');
+		return false;
+	}
+	if(!method_exists($worker_class, $method)){
+		queue_logger($log_file, 'method:'.$worker.'->'.$method.' not exist');
+		return false;
+	}
+	return $worker_class;
 }
 
 //日志记录器
@@ -184,7 +192,7 @@ function error_handle($errno, $errstr, $errfile, $errline){
 	file_put_contents($error_log_file, $line."\n", FILE_APPEND);
 }
 
-//获取CLI模式woker进程数
+//获取CLI模式worker进程数
 function get_cli_worker_count(){
 	$num = 0;
 	$cmd = 'ps -ef | grep -v "grep" | grep -r "worker/cli/.*.php" | wc -l';
