@@ -4,7 +4,7 @@ require dirname(__FILE__).'/../inc/redis.php';
 
 $redis = getRedisConnect($_redis_config);
 
-define('QUEUE_KEY', 'millipede:queue');
+define('QUEUE_KEY', 'millipede:queue:0');
 
 $queue_data = array(
 	'worker' => 'test',
