@@ -1,4 +1,0 @@
-2015-12-16 01:00:26	Custom error: [8]Undefined variable: log_file Error on line 121 in /mnt/github/millipede/millipede.php
-2015-12-16 01:00:26	Custom error: [2]file_put_contents(): Filename cannot be empty Error on line 167 in /mnt/github/millipede/millipede.php
-2015-12-16 01:01:31	Custom error: [2]file_put_contents() expects parameter 1 to be a valid path, array given Error on line 167 in /mnt/github/millipede/millipede.php
-2015-12-16 01:02:10	Custom error: [2]file_put_contents() expects parameter 1 to be a valid path, array given Error on line 167 in /mnt/github/millipede/millipede.php
