@@ -2,7 +2,7 @@
 $_redis_config = array(
 	'socket_type' => 'tcp',
 	'host' => '127.0.0.1',
-	'password' => 'Meibao4ever', 
+	'password' => '', 
 	'port' => 6379,
 	'timeout' => 3
 );
